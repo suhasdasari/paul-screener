@@ -1,19 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Loader2, Search, BookmarkPlus } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { analyzeStockFn, searchStocksFn, type AnalyzeResult, type SearchHit } from "@/lib/stock-api";
 import { formatCap, formatPrice, type Band } from "@/lib/paul";
-import {
-  DEFAULT_WATCHLIST,
-  loadWatchlist,
-  saveWatchlist,
-  type WatchItem,
-} from "@/lib/watchlist";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-
-type Region = "india" | "us" | "world" | "all";
 
 const BAND_LABEL: Record<Band, string> = {
   best: "BEST",
@@ -28,18 +20,11 @@ export function PaulApp({ initialSymbol }: { initialSymbol?: string }) {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [openHits, setOpenHits] = useState(false);
-  const [region, setRegion] = useState<Region>("all");
-  const [watch, setWatch] = useState<WatchItem[]>(DEFAULT_WATCHLIST);
-  const [active, setActive] = useState<string | undefined>(initialSymbol);
   const [data, setData] = useState<AnalyzeResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const timer = useRef<number | undefined>(undefined);
-
-  useEffect(() => {
-    setWatch(loadWatchlist());
-  }, []);
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -56,7 +41,6 @@ export function PaulApp({ initialSymbol }: { initialSymbol?: string }) {
   }, [initialSymbol]);
 
   async function loadSymbol(symbol: string) {
-    setActive(symbol);
     setOpenHits(false);
     setQuery("");
     setHits([]);
@@ -93,20 +77,6 @@ export function PaulApp({ initialSymbol }: { initialSymbol?: string }) {
     }, 220);
   }
 
-  function addToWatch(hit: SearchHit) {
-    const next = [
-      { symbol: hit.symbol, name: hit.name, region: "world" as const },
-      ...watch.filter((w) => w.symbol !== hit.symbol),
-    ].slice(0, 40);
-    setWatch(next);
-    saveWatchlist(next);
-  }
-
-  const chips = useMemo(() => {
-    if (region === "all") return watch;
-    return watch.filter((w) => w.region === region);
-  }, [watch, region]);
-
   return (
     <main className="mx-auto min-h-screen max-w-6xl px-4 pb-16 pt-8 sm:px-6">
       <header className="mb-8 max-w-2xl">
@@ -123,7 +93,7 @@ export function PaulApp({ initialSymbol }: { initialSymbol?: string }) {
         </p>
       </header>
 
-      <div className="relative mb-4" ref={boxRef}>
+      <div className="relative mb-8" ref={boxRef}>
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle" />
@@ -147,10 +117,10 @@ export function PaulApp({ initialSymbol }: { initialSymbol?: string }) {
         {openHits && hits.length > 0 && (
           <ul className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-border bg-surface">
             {hits.map((h) => (
-              <li key={h.symbol} className="flex items-stretch border-b border-border last:border-0">
+              <li key={h.symbol} className="border-b border-border last:border-0">
                 <button
                   type="button"
-                  className="flex min-h-11 flex-1 items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-surface-2"
+                  className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-surface-2"
                   onClick={() => void loadSymbol(h.symbol)}
                 >
                   <span className="truncate text-sm text-fg">{h.name}</span>
@@ -158,46 +128,10 @@ export function PaulApp({ initialSymbol }: { initialSymbol?: string }) {
                     {h.symbol} · {h.exchange}
                   </span>
                 </button>
-                <button
-                  type="button"
-                  className="grid w-11 place-items-center text-muted hover:bg-surface-2 hover:text-fg"
-                  aria-label={`Save ${h.symbol}`}
-                  onClick={() => addToWatch(h)}
-                >
-                  <BookmarkPlus className="size-4" />
-                </button>
               </li>
             ))}
           </ul>
         )}
-      </div>
-
-      <div className="mb-3 flex flex-wrap gap-2">
-        {(["all", "india", "us", "world"] as const).map((r) => (
-          <Button
-            key={r}
-            type="button"
-            size="sm"
-            variant={region === r ? "default" : "outline"}
-            onClick={() => setRegion(r)}
-          >
-            {r === "all" ? "All" : r === "india" ? "India" : r === "us" ? "US" : "World"}
-          </Button>
-        ))}
-      </div>
-
-      <div className="mb-8 flex flex-wrap gap-2">
-        {chips.map((c) => (
-          <Button
-            key={c.symbol}
-            type="button"
-            size="chip"
-            variant={active === c.symbol ? "default" : "outline"}
-            onClick={() => void loadSymbol(c.symbol)}
-          >
-            {c.name}
-          </Button>
-        ))}
       </div>
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,320px)_1fr]">
@@ -207,6 +141,7 @@ export function PaulApp({ initialSymbol }: { initialSymbol?: string }) {
     </main>
   );
 }
+
 
 function ScorePanel({
   data,
