@@ -4,6 +4,8 @@ Score any listed stock against Prasenjit Paul’s Quick Formula from *How To Avo
 
 Search India (NSE/BSE), US, Europe, Japan, and other Yahoo-listed names. India names also pull extra ratios from Screener.in.
 
+Sign in with Google or X to save a watchlist to your account.
+
 ## What it checks
 
 - ROE > 20%
@@ -22,7 +24,5 @@ Search India (NSE/BSE), US, Europe, Japan, and other Yahoo-listed names. India n
 npm install
 npm run dev
 ```
-
-Open the local preview the command prints.
 
 Not investment advice.
