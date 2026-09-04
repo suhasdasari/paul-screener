@@ -2,12 +2,12 @@ import { Link } from "@tanstack/react-router";
 
 export function SiteNav() {
   return (
-    <header className="border-b border-border">
-      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link to="/" className="font-headline text-lg tracking-tight text-fg">
+    <header className="shrink-0 border-b border-border">
+      <div className="flex h-10 items-center justify-between px-3">
+        <Link to="/" className="font-headline text-[15px] tracking-tight text-fg">
           Paul Screener
         </Link>
-        <nav className="flex items-center gap-6 text-sm">
+        <nav className="flex items-center gap-4 text-xs">
           <Link
             to="/"
             activeOptions={{ exact: true }}

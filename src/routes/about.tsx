@@ -16,7 +16,8 @@ export const Route = createFileRoute("/about")({
 
 function AboutPage() {
   return (
-    <main className="mx-auto max-w-2xl px-4 py-12 sm:px-6 sm:py-16">
+    <main className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6 sm:py-16">
       <p className="text-xs font-medium tracking-widest text-muted uppercase">
         Source of the filters
       </p>
@@ -83,6 +84,7 @@ function AboutPage() {
         marked N/A rather than guessed. This is not investment advice. Read the
         book, then do your own work.
       </p>
+      </div>
     </main>
   );
 }

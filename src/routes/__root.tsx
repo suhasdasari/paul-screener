@@ -36,11 +36,15 @@ export const Route = createRootRoute({
       <head>
         <HeadContent />
       </head>
-      <body className="min-h-screen bg-bg text-fg">
+      <body className="h-dvh overflow-hidden bg-bg text-fg">
         <PreviewHostBridge />
         <AuthProvider>
-          <SiteNav />
-          <Outlet />
+          <div className="flex h-full min-h-0 flex-col">
+            <SiteNav />
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <Outlet />
+            </div>
+          </div>
         </AuthProvider>
         <Scripts />
       </body>
