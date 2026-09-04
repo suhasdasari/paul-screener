@@ -1,7 +1,16 @@
+import { Agent, fetch as undiciFetch } from "undici";
 import type { StockMetrics } from "./paul";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+const httpAgent = new Agent({
+  maxHeaderSize: 1024 * 1024,
+  headersTimeout: 25_000,
+  bodyTimeout: 25_000,
+  connect: { timeout: 12_000 },
+});
+
 
 type CacheEntry<T> = { at: number; value: T };
 const cache = new Map<string, CacheEntry<unknown>>();
@@ -16,24 +25,34 @@ function cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
   });
 }
 
-async function fetchText(url: string, timeoutMs = 16000): Promise<string> {
+async function fetchText(url: string, timeoutMs = 18000): Promise<string> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
+    const res = await undiciFetch(url, {
       signal: ctrl.signal,
+      dispatcher: httpAgent,
       headers: {
         "User-Agent": UA,
         Accept: "text/html,application/json;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
       },
     });
-    if (!res.ok) throw new Error(`${res.status} ${url}`);
+    if (!res.ok) throw new Error(`Lookup failed (${res.status})`);
     return await res.text();
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") throw new Error("Timed out reading market data");
+    const cause = e instanceof Error && "cause" in e && e.cause instanceof Error ? e.cause.message : "";
+    const base = e instanceof Error ? e.message : "Lookup failed";
+    if (base === "fetch failed" || cause.includes("HEADERS_OVERFLOW")) {
+      throw new Error("Market data source blocked the request. Try again in a moment.");
+    }
+    throw e instanceof Error ? e : new Error(base);
   } finally {
     clearTimeout(t);
   }
 }
+
 
 function rawNum(v: unknown): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
