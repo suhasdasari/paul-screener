@@ -7,6 +7,8 @@ import {
   trendingStocksFn,
   type AnalyzeResult,
 } from "@/lib/stock-api";
+import { addWatchFn, getWatchlistFn, removeWatchFn, replaceWatchlistFn } from "@/lib/watch-api";
+import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { formatCap, formatPrice, type Band, type PaulCheck } from "@/lib/paul";
 import {
   ALL_MARKETS,
@@ -52,13 +54,41 @@ export function PaulApp({ initialSymbol }: { initialSymbol?: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const searchTimer = useRef<number | undefined>(undefined);
+  const { user, isPending: authPending } = useCurrentUserState();
+  const syncedUser = useRef<string | null>(null);
 
   useEffect(() => {
-    setWatch(loadWatchlist());
     void trendingStocksFn()
       .then((rows) => setTrending(rows.map((h) => ({ symbol: h.symbol, name: h.name }))))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (authPending) return;
+    if (!user) {
+      syncedUser.current = null;
+      setWatch(loadWatchlist());
+      return;
+    }
+    if (syncedUser.current === user.id) return;
+    syncedUser.current = user.id;
+    void getWatchlistFn()
+      .then(async (rows) => {
+        if (rows.length > 0) {
+          setWatch(rows);
+          saveWatchlist(rows);
+          return;
+        }
+        const local = loadWatchlist();
+        if (local.length === 0) {
+          setWatch([]);
+          return;
+        }
+        setWatch(local);
+        await replaceWatchlistFn({ data: local });
+      })
+      .catch(() => setWatch(loadWatchlist()));
+  }, [user, authPending]);
 
   useEffect(() => {
     void loadSymbol(initialSymbol || "IRCTC.NS");
@@ -103,11 +133,17 @@ export function PaulApp({ initialSymbol }: { initialSymbol?: string }) {
   }
 
   function toggleWatch(item: WatchItem) {
-    const next = isWatched(item.symbol)
+    const exists = isWatched(item.symbol);
+    const next = exists
       ? watch.filter((w) => w.symbol !== item.symbol)
       : [{ symbol: item.symbol, name: item.name }, ...watch].slice(0, 60);
     setWatch(next);
     saveWatchlist(next);
+    if (!user) return;
+    void (exists
+      ? removeWatchFn({ data: { symbol: item.symbol } })
+      : addWatchFn({ data: { symbol: item.symbol, name: item.name } })
+    ).catch(() => {});
   }
 
   const catalog = tab === "all" ? ALL_MARKETS : tab === "trending" ? trending : watch;
@@ -173,7 +209,9 @@ export function PaulApp({ initialSymbol }: { initialSymbol?: string }) {
         <div className="min-h-0 flex-1 overflow-y-auto">
           {tab === "watch" && rows.length === 0 && (
             <p className="px-3 py-6 text-center text-[11px] leading-relaxed text-muted">
-              Star names in All or Trending to pin them here.
+              {user
+                ? "Star names in All or Trending to save them to your account."
+                : "Star names, then sign in to keep this list on any device."}
             </p>
           )}
           {rows.map((w) => (
