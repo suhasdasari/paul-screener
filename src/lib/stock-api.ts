@@ -17,6 +17,11 @@ export const searchStocksFn = createServerFn({ method: "POST" })
     return searchStocks(data.q);
   });
 
+export const trendingStocksFn = createServerFn({ method: "POST" }).handler(async () => {
+  const { trendingStocks } = await import("./market.server");
+  return trendingStocks();
+});
+
 export const analyzeStockFn = createServerFn({ method: "POST" })
   .validator((data: { symbol: string }) => {
     const symbol = String(data.symbol ?? "").trim();

@@ -106,6 +106,44 @@ export async function searchStocks(q: string): Promise<SearchHit[]> {
   });
 }
 
+export async function trendingStocks(): Promise<SearchHit[]> {
+  return cached("trending:us-in:v1", async () => {
+    const { INDIA_TRENDING } = await import("./watchlist");
+    let us: SearchHit[] = [];
+    try {
+      const json = JSON.parse(
+        await fetchText("https://query1.finance.yahoo.com/v1/finance/trending/US?count=24"),
+      ) as { finance?: { result?: Array<{ quotes?: Array<{ symbol?: string }> }> } };
+      const symbols = (json.finance?.result?.[0]?.quotes ?? [])
+        .map((q) => q.symbol)
+        .filter(
+          (s): s is string =>
+            !!s &&
+            !s.startsWith("^") &&
+            !s.includes("=") &&
+            !/-(USD|CAD|EUR|GBP|INR|AUD|USDT)$/.test(s),
+        )
+        .slice(0, 12);
+      const found = await Promise.all(symbols.map((s) => searchStocks(s)));
+      us = found.map((hits, i) => hits[0] ?? { symbol: symbols[i], name: symbols[i], exchange: "", type: "EQUITY" });
+    } catch {
+      us = [];
+    }
+    const india: SearchHit[] = INDIA_TRENDING.map((x) => ({
+      symbol: x.symbol,
+      name: x.name,
+      exchange: x.symbol.endsWith(".NS") ? "NSE" : "",
+      type: "EQUITY",
+    }));
+    const seen = new Set<string>();
+    return [...india, ...us].filter((h) => {
+      if (seen.has(h.symbol)) return false;
+      seen.add(h.symbol);
+      return true;
+    });
+  });
+}
+
 type YahooYear = { date?: number; revenue?: unknown; earnings?: unknown };
 
 function growthFromYears(years: YahooYear[], field: "revenue" | "earnings"): {

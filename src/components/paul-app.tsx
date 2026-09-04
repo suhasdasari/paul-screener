@@ -1,16 +1,24 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Loader2, Search } from "lucide-react";
-import { analyzeStockFn, searchStocksFn, type AnalyzeResult, type SearchHit } from "@/lib/stock-api";
+import { Loader2, Search, Star } from "lucide-react";
+import {
+  analyzeStockFn,
+  searchStocksFn,
+  trendingStocksFn,
+  type AnalyzeResult,
+} from "@/lib/stock-api";
 import { formatCap, formatPrice, type Band, type PaulCheck } from "@/lib/paul";
 import {
-  DEFAULT_WATCHLIST,
+  ALL_MARKETS,
+  INDIA_TRENDING,
   loadWatchlist,
   saveWatchlist,
   type WatchItem,
 } from "@/lib/watchlist";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+
+type Tab = "all" | "trending" | "watch";
 
 const BAND_LABEL: Record<Band, string> = {
   best: "BEST",
@@ -35,26 +43,21 @@ const SHORT: Record<string, string> = {
 export function PaulApp({ initialSymbol }: { initialSymbol?: string }) {
   const navigate = useNavigate({ from: "/" });
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<SearchHit[]>([]);
-  const [openHits, setOpenHits] = useState(false);
-  const [watch, setWatch] = useState<WatchItem[]>(DEFAULT_WATCHLIST);
+  const [hits, setHits] = useState<WatchItem[]>([]);
+  const [tab, setTab] = useState<Tab>("all");
+  const [watch, setWatch] = useState<WatchItem[]>([]);
+  const [trending, setTrending] = useState<WatchItem[]>(INDIA_TRENDING);
   const [active, setActive] = useState(initialSymbol || "IRCTC.NS");
   const [data, setData] = useState<AnalyzeResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
-  const timer = useRef<number | undefined>(undefined);
+  const searchTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     setWatch(loadWatchlist());
-  }, []);
-
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (!boxRef.current?.contains(e.target as Node)) setOpenHits(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    void trendingStocksFn()
+      .then((rows) => setTrending(rows.map((h) => ({ symbol: h.symbol, name: h.name }))))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -64,9 +67,6 @@ export function PaulApp({ initialSymbol }: { initialSymbol?: string }) {
 
   async function loadSymbol(symbol: string) {
     setActive(symbol);
-    setOpenHits(false);
-    setQuery("");
-    setHits([]);
     setLoading(true);
     setError(null);
     void navigate({ search: { symbol } });
@@ -83,35 +83,61 @@ export function PaulApp({ initialSymbol }: { initialSymbol?: string }) {
 
   function onQuery(v: string) {
     setQuery(v);
-    window.clearTimeout(timer.current);
+    window.clearTimeout(searchTimer.current);
     if (v.trim().length < 2) {
       setHits([]);
-      setOpenHits(false);
       return;
     }
-    timer.current = window.setTimeout(async () => {
+    searchTimer.current = window.setTimeout(async () => {
       try {
         const res = await searchStocksFn({ data: { q: v } });
-        setHits(res);
-        setOpenHits(true);
+        setHits(res.map((h) => ({ symbol: h.symbol, name: h.name })));
       } catch {
         setHits([]);
       }
     }, 220);
   }
 
-  function pickHit(hit: SearchHit) {
-    const item: WatchItem = { symbol: hit.symbol, name: hit.name, region: "world" };
-    const next = [item, ...watch.filter((w) => w.symbol !== hit.symbol)].slice(0, 40);
+  function isWatched(symbol: string) {
+    return watch.some((w) => w.symbol === symbol);
+  }
+
+  function toggleWatch(item: WatchItem) {
+    const next = isWatched(item.symbol)
+      ? watch.filter((w) => w.symbol !== item.symbol)
+      : [{ symbol: item.symbol, name: item.name }, ...watch].slice(0, 60);
     setWatch(next);
     saveWatchlist(next);
-    void loadSymbol(hit.symbol);
   }
+
+  const catalog = tab === "all" ? ALL_MARKETS : tab === "trending" ? trending : watch;
+  const q = query.trim().toLowerCase();
+  const rows = useMemo(() => {
+    const filtered = q
+      ? catalog.filter(
+          (x) => x.name.toLowerCase().includes(q) || x.symbol.toLowerCase().includes(q),
+        )
+      : catalog;
+    if (q.length < 2) return filtered;
+    const seen = new Set(filtered.map((x) => x.symbol));
+    const extra = hits.filter((h) => !seen.has(h.symbol));
+    return [...filtered, ...extra];
+  }, [catalog, q, hits]);
+
+  const watchedActive = data ? isWatched(data.symbol) : isWatched(active);
 
   return (
     <div className="paul-shell flex h-full min-h-0 flex-col overflow-y-auto min-[720px]:flex-row min-[720px]:overflow-hidden">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <TickerBar data={data} loading={loading} error={error} />
+        <TickerBar
+          data={data}
+          loading={loading}
+          error={error}
+          watched={watchedActive}
+          onToggleWatch={() => {
+            if (data) toggleWatch({ symbol: data.symbol, name: data.name });
+          }}
+        />
         <div className="grid min-h-0 flex-1 grid-cols-1 min-[720px]:grid-cols-[200px_minmax(0,1fr)]">
           <ScoreRail data={data} loading={loading} />
           <CriteriaGrid data={data} loading={loading} />
@@ -119,52 +145,64 @@ export function PaulApp({ initialSymbol }: { initialSymbol?: string }) {
       </section>
 
       <aside className="flex w-full shrink-0 flex-col border-t border-border min-[720px]:w-72 min-[720px]:border-t-0 min-[720px]:border-l">
-        <div className="relative shrink-0 border-b border-border p-2" ref={boxRef}>
+        <div className="relative shrink-0 border-b border-border p-2">
           <Search className="pointer-events-none absolute top-1/2 left-4 size-3.5 -translate-y-1/2 text-subtle" />
           <Input
             value={query}
             onChange={(e) => onQuery(e.target.value)}
-            onFocus={() => hits.length && setOpenHits(true)}
-            placeholder="Search any market…"
+            placeholder="Search markets…"
             className="h-8 rounded-md bg-bg pl-8 text-xs"
             aria-label="Search stocks"
           />
-          {openHits && hits.length > 0 && (
-            <ul className="absolute inset-x-2 top-full z-30 mt-1 overflow-hidden rounded-md border border-border bg-surface shadow-lg">
-              {hits.map((h) => (
-                <li key={h.symbol}>
-                  <button
-                    type="button"
-                    className="flex min-h-9 w-full items-center justify-between gap-2 px-3 text-left hover:bg-surface-2"
-                    onClick={() => pickHit(h)}
-                  >
-                    <span className="truncate text-xs text-fg">{h.name}</span>
-                    <span className="shrink-0 font-mono text-[10px] text-muted tabular-nums">
-                      {h.symbol}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
-        <p className="px-3 pt-2 pb-1 text-[10px] font-medium tracking-widest text-subtle uppercase">
-          Watchlist
-        </p>
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {watch.map((w) => (
+        <div className="grid shrink-0 grid-cols-3 border-b border-border">
+          {(["all", "trending", "watch"] as const).map((t) => (
             <button
-              key={w.symbol}
+              key={t}
               type="button"
-              onClick={() => void loadSymbol(w.symbol)}
+              onClick={() => setTab(t)}
               className={cn(
-                "flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left",
+                "h-8 text-[11px] font-medium tracking-wide",
+                tab === t ? "text-fg border-b border-fg" : "text-muted hover:text-fg",
+              )}
+            >
+              {t === "all" ? "All" : t === "trending" ? "Trending" : "Watchlist"}
+            </button>
+          ))}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {tab === "watch" && rows.length === 0 && (
+            <p className="px-3 py-6 text-center text-[11px] leading-relaxed text-muted">
+              Star names in All or Trending to pin them here.
+            </p>
+          )}
+          {rows.map((w) => (
+            <div
+              key={w.symbol}
+              className={cn(
+                "flex items-stretch",
                 active === w.symbol ? "bg-surface-2" : "hover:bg-surface-2/60",
               )}
             >
-              <span className="truncate text-xs text-fg">{w.name}</span>
-              <span className="shrink-0 font-mono text-[10px] text-muted tabular-nums">{w.symbol}</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => void loadSymbol(w.symbol)}
+                className="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 py-1.5 text-left"
+              >
+                <span className="truncate text-xs text-fg">{w.name}</span>
+                <span className="shrink-0 font-mono text-[10px] text-muted tabular-nums">{w.symbol}</span>
+              </button>
+              <button
+                type="button"
+                aria-label={isWatched(w.symbol) ? `Remove ${w.name}` : `Add ${w.name}`}
+                onClick={() => toggleWatch(w)}
+                className="grid w-8 shrink-0 place-items-center text-subtle hover:text-fg"
+              >
+                <Star
+                  className={cn("size-3.5", isWatched(w.symbol) && "fill-warn text-warn")}
+                />
+              </button>
+            </div>
           ))}
         </div>
       </aside>
@@ -176,10 +214,14 @@ function TickerBar({
   data,
   loading,
   error,
+  watched,
+  onToggleWatch,
 }: {
   data: AnalyzeResult | null;
   loading: boolean;
   error: string | null;
+  watched: boolean;
+  onToggleWatch: () => void;
 }) {
   return (
     <div className="flex h-11 shrink-0 items-center gap-4 overflow-hidden border-b border-border px-3">
@@ -192,6 +234,14 @@ function TickerBar({
         <span className="text-xs text-fail">{error}</span>
       ) : data ? (
         <>
+          <button
+            type="button"
+            onClick={onToggleWatch}
+            aria-label={watched ? "Remove from watchlist" : "Add to watchlist"}
+            className="grid size-7 shrink-0 place-items-center text-subtle hover:text-fg"
+          >
+            <Star className={cn("size-3.5", watched && "fill-warn text-warn")} />
+          </button>
           <div className="min-w-0">
             <p className="truncate font-headline text-base leading-none text-fg">{data.name}</p>
             <p className="mt-0.5 font-mono text-[10px] text-muted tabular-nums">
@@ -210,6 +260,7 @@ function TickerBar({
     </div>
   );
 }
+
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
